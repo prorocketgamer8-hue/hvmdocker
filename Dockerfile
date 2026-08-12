@@ -2,10 +2,10 @@ FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-ENV TZ=UTC
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # ============================================================
-# SYSTEM PACKAGES
+# SYSTEM + HVM DEPENDENCIES
 # ============================================================
 
 RUN apt-get update && apt-get install -y \
@@ -17,12 +17,12 @@ RUN apt-get update && apt-get install -y \
     unzip \
     zip \
     rsync \
+    nano \
     procps \
     iproute2 \
     iputils-ping \
     net-tools \
     bridge-utils \
-    iptables \
     openssh-client \
     python3 \
     python3-pip \
@@ -34,16 +34,15 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     libpq-dev \
     libmariadb-dev \
+    mariadb-client \
+    redis-tools \
+    postgresql-client \
     lxc \
     lxc-utils \
     lxc-templates \
     lxcfs \
     uidmap \
-    mariadb-client \
-    redis-tools \
-    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
-
 
 # ============================================================
 # PYTHON LIBRARIES
@@ -67,89 +66,72 @@ RUN python3 -m pip install --no-cache-dir \
     gunicorn \
     eventlet
 
-
 # ============================================================
 # HVM 5.1
 # ============================================================
 
-WORKDIR /root
+WORKDIR /opt
 
 RUN git clone \
     https://github.com/DreamHost2ws/HVM5.1.git \
-    /root/hvm
+    hvm
 
-WORKDIR /root/hvm
+WORKDIR /opt/hvm
 
-# Install HVM's own requirements if available
 RUN if [ -f requirements.txt ]; then \
         python3 -m pip install --no-cache-dir -r requirements.txt; \
     fi
 
-
 # ============================================================
-# LXC DIRECTORIES
+# RUNTIME DIRECTORIES
 # ============================================================
 
 RUN mkdir -p \
     /var/lib/lxc \
     /var/lib/lxd \
-    /run/lxc
-
+    /opt/hvm/data \
+    /opt/hvm/logs
 
 # ============================================================
-# STARTUP SCRIPT
+# AUTOMATIC STARTUP
 # ============================================================
 
 RUN cat > /usr/local/bin/start-hvm.sh <<'EOF'
 #!/bin/bash
-
 set -e
 
-echo "=============================================="
-echo "          HVM 5.1 PANEL"
-echo "=============================================="
-echo "Starting HVM..."
-echo
+echo "=========================================="
+echo "           HVM 5.1 PANEL"
+echo "=========================================="
 
-cd /root/hvm
+cd /opt/hvm
 
-# Show installed LXC version
-echo "LXC:"
-lxc-info --version 2>/dev/null || true
+echo "Python: $(python3 --version)"
+echo "LXC: $(lxc-info --version 2>/dev/null || echo unavailable)"
+echo "PORT: ${PORT:-8080}"
 
-echo
-echo "Python:"
-python3 --version
-
-echo
-echo "Starting application..."
-echo
+# Railway supplies PORT automatically.
+# HVM itself must bind to 0.0.0.0:$PORT.
 
 if [ -f hvm-5.1.py ]; then
     exec python3 hvm-5.1.py
-elif [ -f hvm.py ]; then
-    exec python3 hvm.py
-else
-    echo "ERROR: HVM startup file was not found."
-    echo
-    echo "Files in /root/hvm:"
-    ls -la
-    exit 1
 fi
+
+if [ -f hvm.py ]; then
+    exec python3 hvm.py
+fi
+
+echo "ERROR: HVM startup file was not found."
+ls -la
+exit 1
 EOF
 
 RUN chmod +x /usr/local/bin/start-hvm.sh
 
-
 # ============================================================
-# RAILWAY PORT
+# RAILWAY
 # ============================================================
 
 EXPOSE 8080
-
-
-# ============================================================
-# START
-# ============================================================
 
 CMD ["/usr/local/bin/start-hvm.sh"]
