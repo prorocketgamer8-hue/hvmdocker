@@ -27,7 +27,6 @@ RUN apt-get update && apt-get install -y \
     net-tools \
     bridge-utils \
     iptables \
-    iptables-persistent \
     openssh-client \
     openssh-server \
     systemd \
